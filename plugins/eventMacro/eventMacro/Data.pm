@@ -11,7 +11,7 @@ our @perl_name;
 
 our $valid_var_characters = qr/\.?[a-zA-Z][a-zA-Z\d_]*/;
 
-our $general_variable_qr = qr/(?:\$$valid_var_characters(?:\[\d+\]|\{[a-zA-Z\d]+\})?|\@$valid_var_characters|\%$valid_var_characters)/;
+our $general_variable_qr = qr/(?:\$$valid_var_characters(?:\[\d+\]|\{[a-zA-Z\d_]+\})?|\@$valid_var_characters|\%$valid_var_characters)/;
 
 our $general_wider_variable_qr = qr/(?:\$$valid_var_characters(?:\[.+?\]|\{.+?\})?|\@$valid_var_characters|\%$valid_var_characters)/;
 
@@ -21,7 +21,7 @@ our $array_variable_qr = qr/\@$valid_var_characters/;
 our $accessed_array_variable_qr = qr/\$$valid_var_characters\[\d+\]/;
 
 our $hash_variable_qr = qr/\%$valid_var_characters/;
-our $accessed_hash_variable_qr = qr/\$$valid_var_characters\{[a-zA-Z\d]+\}/;
+our $accessed_hash_variable_qr = qr/\$$valid_var_characters\{[a-zA-Z\d_]+\}/;
 
 our $macro_keywords_character = '&';
 
@@ -44,6 +44,8 @@ our %parameters = (
 	'disabled' => 1,              # option: automacro disabled
 	'call' => 1,                  # setting: macro to be called
 	'overrideAI' => 1,            # option: override AI
+	'overrideNotWhenInQueue' => 1,# option: ignore eventMacro_notWhenInQueue
+	'CheckOnCycleStage' => 1,     # option: in which AI loop stage the automacro may fire
 	'orphan' => 1,                # option: orphan handling
 	'macro_delay' => 1,           # option: default macro delay
 	'priority' => 1,              # option: automacro priority
@@ -54,11 +56,12 @@ our %parameters = (
 );
 
 our $macroKeywords = join '|', qw(
-	arg listlength
-	cartamount cart Cart
-	config
-	defined
-	eval
+        arg listlength
+        cartamount cart Cart
+        itemCard itemCardAmount itemOption itemOptAmount
+        config
+        defined
+        eval
 	exists
 	delete
 	invamount inventory Inventory InventoryType

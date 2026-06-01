@@ -17,9 +17,9 @@ use eventMacro::Data;
 use eventMacro::Core;
 use eventMacro::FileParser qw(isNewCommandBlock);
 use eventMacro::Utilities qw(cmpr getnpcID getItemIDs getItemPrice getStorageIDs getInventoryIDs getInventoryTypeIDs
-	getPlayerID getMonsterID getVenderID getRandom getRandomRange getInventoryAmount getCartAmount getShopAmount
-	getStorageAmount getVendAmount getConfig getWord q4rx q4rx2 getArgFromList get_pattern find_variable get_key_or_index getQuestStatus
-	find_hash_and_get_keys find_hash_and_get_values);
+        getPlayerID getMonsterID getVenderID getRandom getRandomRange getInventoryAmount getCartAmount getShopAmount
+        getStorageAmount getVendAmount getConfig getWord q4rx q4rx2 getArgFromList get_pattern find_variable get_key_or_index getQuestStatus
+        find_hash_and_get_keys find_hash_and_get_values getEquipCards getEquipCardAmount getEquipOptions getEquipOptionsAmount);
 use eventMacro::Automacro;
 
 # Creates the object
@@ -929,7 +929,7 @@ sub define_next_valid_command {
 		# Goto flow command
 		######################################
 		} elsif ($self->{current_line} =~ /^goto\s/) {
-			my ($label) = $self->{current_line} =~ /^goto\s+([a-zA-Z][a-zA-Z\d]*)/;
+			my ($label) = $self->{current_line} =~ /^goto\s+([a-zA-Z][a-zA-Z\d_]*)/;
 			if (exists $self->{label}->{$label}) {
 				debug "[eventMacro] Script is a goto flow command.\n", "eventMacro", 3;
 				$self->line_index($self->{label}->{$label});
@@ -1647,7 +1647,7 @@ sub parse_log {
 			return;
 		}
 	}
-	$self->timeout($self->macro_delay);
+	$self->timeout(0);
 	$self->next_line;
 }
 
@@ -1984,7 +1984,7 @@ sub find_and_define_key_index {
 			$self->error("Empty key of hash or index of array after parsing");
 			return;
 
-		} elsif ($type eq 'hash' && $parsed_key_index !~ /[a-zA-Z\d]+/) {
+		} elsif ($type eq 'hash' && $parsed_key_index !~ /[a-zA-Z\d_]+/) {
 			$self->error("Invalid syntax in key of hash (only use letters and numbers)");
 			return;
 
@@ -2094,7 +2094,7 @@ sub parse_keywords {
 
 	return unless @pair;
 	if ($pair[0] eq 'arg') {
-		return $command =~ /$macro_keywords_character(arg)\s*\(\s*(".*?",\s*(\d+|\$[a-zA-Z][a-zA-Z\d]*))\s*\)/
+		return $command =~ /$macro_keywords_character(arg)\s*\(\s*(".*?",\s*(\d+|\$[a-zA-Z][a-zA-Z\d_]*))\s*\)/
 	} elsif ($pair[0] eq 'random') {
 		return $command =~ /$macro_keywords_character(random)\s*\(\s*(".*?")\s*\)/
 	}
@@ -2182,14 +2182,26 @@ sub parse_command {
 		} elsif ($keyword eq 'cartamount') {
 			$result = getCartAmount($parsed);
 
-		} elsif ($keyword eq 'shopamount') {
-			$result = getShopAmount($parsed);
+                } elsif ($keyword eq 'shopamount') {
+                        $result = getShopAmount($parsed);
 
-		} elsif ($keyword eq 'storamount') {
-			$result = getStorageAmount($parsed);
+                } elsif ($keyword eq 'storamount') {
+                        $result = getStorageAmount($parsed);
 
-		} elsif ($keyword eq 'config') {
-			$result = getConfig($parsed);
+                } elsif ($keyword eq 'itemCard') {
+                        $result = getEquipCards($parsed);
+
+                } elsif ($keyword eq 'itemCardAmount') {
+                        $result = getEquipCardAmount($parsed);
+
+                } elsif ($keyword eq 'itemOption') {
+                        $result = getEquipOptions($parsed);
+
+                } elsif ($keyword eq 'itemOptAmount') {
+                        $result = getEquipOptionsAmount($parsed);
+
+                } elsif ($keyword eq 'config') {
+                        $result = getConfig($parsed);
 
 		} elsif ($keyword eq 'arg') {
 			$result = getWord($parsed);

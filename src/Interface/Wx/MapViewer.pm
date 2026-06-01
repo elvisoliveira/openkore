@@ -327,6 +327,7 @@ sub parsePortals {
 	foreach my $portal (keys %portals_lut) {
 		foreach my $dest (keys %{$portals_lut{$portal}{dest}}) {
 			next if $portals_lut{$portal}{dest}{$dest}{map} eq '';
+			next unless $portals_lut{$portal}{dest}{$dest}{enabled};
 			if ($portals_lut{$portal}{dest}{$dest}{steps}) {
 				# this is a Warp NPC
 				push (@{$self->{portals}->{$portals_lut{$portal}{source}{map}}}, {
@@ -374,7 +375,7 @@ sub _onRightClick {
 		AI::clear(qw/move route mapRoute/);
 		message TF("Walking to waypoint: %s, %s\n", $x, $y), "success";
 		main::ai_route($map, $x, $y,
-		attackOnRoute => 2,
+		attackOnRoute => 1,
 		noSitAuto => 1,
 		notifyUponArrival => 1);
 	}

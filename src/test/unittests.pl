@@ -16,13 +16,17 @@ my @tests = qw(
 	CallbackListTest ObjectListTest ActorListTest WhirlpoolTest RijndaelTest
 	SetTest SkillTest InventoryListTest
 	ItemsTest
+	HandConditionsTest
 	ShopTest
 	TaskManagerTest TaskWithSubtaskTest TaskChainedTest
 	TaskTalkNPCTest
 	PluginsHookTest
 	FileParsersTest
+	DynamicPortalGroupsTest
 	NetworkTest
+	QuestReceiveTest
 	FieldTest
+	XConfTest
 );
 if ($^O eq 'MSWin32') {
 	push @tests, qw(HttpReaderTest);

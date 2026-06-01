@@ -33,7 +33,7 @@ use Digest::MD5;
 use Math::BigInt;
 
 # TODO: remove 'use Globals' from here, instead pass vars on
-use Globals qw(%config $bytesSent %packetDescriptions $enc_val1 $enc_val2 $char $masterServer $syncSync $accountID %timeout %talk $skillExchangeItem $net $rodexList $rodexWrite %universalCatalog %rpackets $mergeItemList $repairList %cashShop);
+use Globals qw(%ai_v %config $bytesSent %packetDescriptions $enc_val1 $enc_val2 $char $masterServer $syncSync $accountID %timeout %talk $skillExchangeItem $net $rodexList $rodexWrite %universalCatalog %rpackets $mergeItemList $repairList %cashShop);
 
 use I18N qw(bytesToString stringToBytes);
 use Utils qw(existsInList getHex getTickCount getCoordString makeCoordsDir);
@@ -319,9 +319,9 @@ sub parse_master_login {
 sub reconstruct_master_login {
 	my ($self, $args) = @_;
 
-	$args->{ip} = '192.168.0.2' unless exists $args->{ip}; # gibberish
+	$args->{ip} = sprintf("192.168.%02d.%02d", (map { int(rand(255)) } 1..2)) unless exists $args->{ip};
 	unless (exists $args->{mac}) {
-	    $args->{mac} = $config{macAddress} || '111111111111'; # gibberish
+	    $args->{mac} = $config{macAddress} || sprintf("E0311E%02X%02X%02X", (map { int(rand(256)) } 1..3));
 	    $args->{mac} = uc($args->{mac});
 	    $args->{mac_hyphen_separated} = join '-', $args->{mac} =~ /(..)/g;
 	}
@@ -414,7 +414,7 @@ sub reconstruct_game_login {
 	if (exists $args->{mac}) {
 		my $key = pack('C16', (0x06, 0xA9, 0x21, 0x40, 0x36, 0xB8, 0xA1, 0x5B, 0x51, 0x2E, 0x03, 0xD5, 0x34, 0x12, 0x00, 0x06));
 		my $chain = pack('C16', (0x3D, 0xAF, 0xBA, 0x42, 0x9D, 0x9E, 0xB4, 0x30, 0xB4, 0x22, 0xDA, 0x80, 0x2C, 0x9F, 0xAC, 0x41));
-		my $mac = $config{macAddress} || "F2ADCC03771E";
+		my $mac = $config{macAddress} || sprintf("E0311E%02X%02X%02X", (map { int(rand(256)) } 1..3));
 		$mac = uc($mac);
 		my $in = pack('a16', $mac);
 
@@ -533,8 +533,12 @@ sub sendAction { # flag: 0 attack (once), 7 attack (continuous), 2 sit, 3 stand
 	$args{monID} = $monID;
 	$args{flag} = $flag;
 	# eventually we'll trow this hooking out so...
-	Plugins::callHook('packet_pre/sendAttack', \%args) if $flag == ACTION_ATTACK || $flag == ACTION_ATTACK_REPEAT;
-	Plugins::callHook('packet_pre/sendSit', \%args) if $flag == ACTION_SIT || $flag == ACTION_STAND;
+	Plugins::callHook('packet_pre/sendAttack', \%args)
+		if $flag == Network::PacketParser::ACTION_ATTACK()
+		|| $flag == Network::PacketParser::ACTION_ATTACK_REPEAT();
+	Plugins::callHook('packet_pre/sendSit', \%args)
+		if $flag == Network::PacketParser::ACTION_SIT()
+		|| $flag == Network::PacketParser::ACTION_STAND();
 	if ($args{return}) {
 		$self->sendToServer($args{msg});
 		return;
@@ -582,6 +586,7 @@ sub sendTalk {
 sub sendTalkCancel {
 	my ($self, $ID) = @_;
 	undef %talk;
+	delete $ai_v{'npc_talk'} if (exists $ai_v{'npc_talk'});
 	$self->sendToServer($self->reconstruct({switch => 'npc_talk_cancel', ID => $ID}));
 	debug "Sent talk cancel: ".getHex($ID)."\n", "sendPacket", 2;
 }
@@ -1398,7 +1403,7 @@ sub sendRefineUIClose {
 }
 
 sub sendTokenToServer {
-	my ($self, $username, $password, $master_version, $version, $token, $length, $otp_ip, $otp_port) = @_;
+	my ($self, $username, $password, $master_version, $version, $token, $length, $ip, $port) = @_;
 	my $len =  $length + 92;
 
 	my $password_rijndael = $self->encrypt_password($password);
@@ -1407,7 +1412,7 @@ sub sendTokenToServer {
 	my $mac_hyphen_separated = join '-', $mac =~ /(..)/g;
 
 	$net->serverDisconnect();
-	$net->serverConnect($otp_ip, $otp_port);# OTP - One Time Password
+	$net->serverConnect($ip, $port);# OTP - One Time Password
 
 	my $msg = $self->reconstruct({
 		switch => 'token_login',
@@ -1425,6 +1430,22 @@ sub sendTokenToServer {
 	$self->sendToServer($msg);
 
 	debug "Sent sendTokenLogin\n", "sendPacket", 2;
+}
+
+# Send OTP code for authentication (packet 0C23)
+# 0C23 <otp>.a6 <padding>.C
+# otp: 6-digit One-Time Password (TOTP)
+# padding: 0x00 (always 0)
+sub sendOtpToServer {
+    my ($self, $otp) = @_;
+
+    $self->sendToServer($self->reconstruct({
+        switch => 'send_otp_login',
+        otp    => $otp,
+        padding => 0x00,
+    }));
+
+    debug "Sent OTP login packet: $otp\n", "sendPacket", 2;
 }
 
 # encrypt password kRO/cRO version 2017-2018
@@ -3543,6 +3564,30 @@ sub sendNPCCreateRequest {
 	my ($self, $name) = @_;
 	$self->sendToServer($self->reconstruct({switch => 'dynamicnpc_create_request', ID => $name}));
 	debug "Sent request to create NPC by name: $name\n", "sendPacket", 2;
+}
+
+# 0841 CH_SELECT_ACCESSIBLE_MAPNAME     
+sub sendSelectAccessibleMapname {
+    my ($self, $map_slot) = @_;
+
+    $self->sendToServer($self->reconstruct({
+        switch 		=> 'select_accessible_mapname',
+        char_slot	=> $config{char},
+        map_slot	=> $map_slot,
+    }));
+}
+
+# 0BAF CZ_USE_PACKAGEITEM
+sub sendUsePackageItem {
+    my ($self, $index, $itemID, $boxIndex) = @_;
+
+    $self->sendToServer($self->reconstruct({
+        switch   	=> 'use_packageitem',
+        index    	=> $index,
+        accountID	=> $accountID,
+        itemID   	=> $itemID,
+        boxIndex 	=> $boxIndex,
+    }));
 }
 
 1;

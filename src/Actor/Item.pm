@@ -96,6 +96,7 @@ sub new {
 	$self->{identified} = 0;
 	$self->{nameID} = 0;
 	$self->{binID} = -1;
+	$self->{serverID} = -1;
 	return $self;
 }
 
@@ -267,7 +268,7 @@ sub queueEquip {
 	my $count = shift;
 	return unless $count;
 	$ai_v{temp}{waitForEquip} += $count;
-	AI::queue('equip') unless AI::action eq 'equip';
+	AI::queue('equip') unless AI::action() eq 'equip';
 	$timeout{ai_equip_giveup}{time} = time;
 }
 

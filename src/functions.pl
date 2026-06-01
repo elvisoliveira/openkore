@@ -217,6 +217,10 @@ sub loadDataFiles {
 		internalName => 'recvpackets.txt',
  		loader => [\&parseRecvpackets, \%rpackets]);
 
+	Settings::addTableFile('teleport_items.txt',
+		internalName => 'teleport_items.txt',
+		loader => [\&parseTeleportItems, \%teleport_items]);
+
 	# Add 'Old' table pack, if user set
 	if ( $sys{locale_compat} == 1) {
 		# Holder for new path
@@ -270,6 +274,9 @@ sub loadDataFiles {
 	Settings::addTableFile('itemtypes.txt',
 		internalName => 'itemtypes.txt',
 		loader => [\&parseDataFile2, \%itemTypes_lut]);
+	Settings::addTableFile('item_hand_type.txt',
+		internalName => 'item_hand_type.txt',
+		loader => [\&parseItemHandTypeTable, \%itemHandType_lut], mustExist => 0);
 	Settings::addTableFile('resnametable.txt',
 		internalName => 'resnametable.txt',
 		loader => [\&parseROLUT, \%mapAlias_lut, 1, ".gat"]);
@@ -282,12 +289,29 @@ sub loadDataFiles {
 	Settings::addTableFile('npcs.txt',
 		internalName => 'npcs.txt',
 		loader => [\&parseNPCs, \%npcs_lut], createIfMissing => 1);
+	Settings::addTableFile('npc_shops.txt',
+		internalName => 'npc_shops.txt',
+		loader => [\&parseNPCShops, \%npc_shops], mustExist => 0,
+		onLoaded => \&compileItemIDtoShops);
+	Settings::addTableFile('no_teleport_maps.txt',
+		internalName => 'no_teleport_maps.txt',
+		loader => [\&parseNoTeleportMaps, \%no_teleport_maps], mustExist => 0);
 	Settings::addTableFile('packetdescriptions.txt',
 		internalName => 'packetdescriptions.txt',
 		loader => [\&parseSectionedFile, \%packetDescriptions], mustExist => 0);
 	Settings::addTableFile('portals.txt',
 		internalName => 'portals.txt',
-		loader => [\&parsePortals, \%portals_lut, \@portals_lut_missed]);
+		loader => [\&parsePortals, \%portals_lut, \@portals_lut_missed],
+		onLoaded => \&refreshDynamicPortalStates);
+	Settings::addTableFile('portals_commands.txt',
+		internalName => 'portals_commands.txt',
+		loader => [\&parsePortalsCommands, \%portals_commands], mustExist => 0);
+	Settings::addTableFile('portals_spawns.txt',
+		internalName => 'portals_spawns.txt',
+		loader => [\&parsePortalsSpawns, \%portals_spawns], mustExist => 0);
+	Settings::addTableFile('portals_airship.txt',
+		internalName => 'portals_airship.txt',
+		loader => [\&parsePortalsAirship, \%portals_airships], mustExist => 0);
 	Settings::addTableFile('portalsLOS.txt',
 		internalName => 'portalsLOS.txt',
 		loader => [\&parsePortalsLOS, \%portals_los], createIfMissing => 1);
@@ -372,6 +396,9 @@ sub loadDataFiles {
 	Settings::addTableFile('achievement_list.txt',
 		internalName => 'achievement_list.txt',
 		loader => [\&parseAchievementFile, \%achievements], mustExist => 0);
+	Settings::addTableFile('monsters_table.txt',
+		internalName => 'monsters_table.txt',
+		loader => [\&parseMonstersTableFile, \%monstersTable], mustExist => 0);
 
 	use utf8;
 
@@ -569,6 +596,20 @@ sub processServerSettings {
 	Settings::setRecvPacketsName($masterServer->{recvpackets} && $masterServer->{recvpackets} ne '' ? $masterServer->{recvpackets} : Settings::getRecvPacketsFilename() );
 }
 
+sub compileItemIDtoShops {
+	my $filename = shift;
+
+	%itemIDtoShops = ();
+	for my $shop (@{$npc_shops{list} || []}) {
+		next unless $shop && $shop->{items};
+
+		for my $item (@{$shop->{items}}) {
+			next unless $item && defined $item->{itemID};
+			push @{$itemIDtoShops{$item->{itemID}}}, $shop;
+		}
+	}
+}
+
 sub finalInitialization {
 	$incomingMessages = new Network::MessageTokenizer(\%rpackets);
 	$outgoingClientMessages = new Network::MessageTokenizer(\%rpackets);
@@ -729,6 +770,7 @@ sub initMapChangeVars {
 	undef %spells;
 	undef %incomingParty;
 	undef %talk;
+	delete $ai_v{'npc_talk'} if (exists $ai_v{'npc_talk'});
 	$ai_v{temp} = {};
 	undef $venderID;
 	undef $venderCID;
@@ -786,7 +828,7 @@ sub initMapChangeVars {
 	$timeout{ai_buyAuto}{time} = time + 5;
 	$timeout{ai_shop}{time} = time;
 
-	AI::clear(qw(attack move teleport));
+	AI::clear(qw(attack move));
 	AI::SlaveManager::clear("attack", "route", "move");
 	ChatQueue::clear;
 
@@ -851,11 +893,26 @@ sub mainLoop_initialized {
 
 	# GameGuard support
 	if ($masterServer->{gameGuard} && ($net->version != 1 || ($net->version == 1 && $masterServer->{gameGuard} eq '2'))) {
-		my $result = Poseidon::Client::getInstance()->getResult();
-		if (defined($result)) {
-			debug "Received Poseidon result.\n", "poseidon";
-			#$messageSender->encryptMessageID(\$result, unpack("v", $result));
-			$messageSender->sendToServer($result);
+		my $instance = Poseidon::Client::getInstance();
+
+		if ($instance && $instance->isWaitingQuery()) {
+			if ($net->getState() == Network::IN_GAME) {
+				my $result = $instance->getResult();
+				if (defined($result)) {
+					debug "Received Poseidon result.\n", "poseidon";
+					#$messageSender->encryptMessageID(\$result, unpack("v", $result));
+
+					my %hookArgs;
+					$hookArgs{result} = $result;
+					$hookArgs{return} = 1;
+					Plugins::callHook('PoseidonReply', \%hookArgs);
+					return 0 if (!$hookArgs{return});
+
+					$messageSender->sendToServer($result);
+				}
+			} else {
+				$instance->reset()
+			}
 		}
 	}
 
@@ -954,7 +1011,7 @@ sub mainLoop_initialized {
 			 || $oldMaster->{version} ne $master->{version}
 			 || $oldUsername ne $config{'username'}
 			 || $oldChar ne $config{'char'}) {
-				AI::clear;
+				AI::clear();
 				AI::SlaveManager::clear();
 				relog();
 			} else {
